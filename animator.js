@@ -996,8 +996,8 @@ export let Animator = class {
         translationY = v3.y;
       }
 
-      dock.dash.translationX = translationX;
-      dock.dash.translationY = translationY;
+      dock.translationX = translationX;
+dock.translationY = translationY;
     }
 
     // background
@@ -1065,7 +1065,7 @@ export let Animator = class {
     }
 
     dock.struts.visible = !dock._hidden;
-    dock.dash.opacity = 255;
+    dock.opacity = 255;
 
     //---------------------
     // animate the list
