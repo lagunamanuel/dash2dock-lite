@@ -390,23 +390,33 @@ export let AutoHide = class {
     return arect;
   }
 
-  _getWindowRect(metaWindow) {
+    _getWindowRect(metaWindow) {
     let actor = metaWindow.get_compositor_private();
 
-    if (actor && actor.allocation) {
-      let a = actor.allocation;
-      let width = a.x2 - a.x1;
-      let height = a.y2 - a.y1;
+    if (actor) {
+      try {
+        let box = actor.get_allocation_box();
+        let width = box.x2 - box.x1;
+        let height = box.y2 - box.y1;
 
-      if (width > 0 && height > 0)
-        return [a.x1, a.y1, width, height];
+        if (width > 0 && height > 0)
+          return [box.x1, box.y1, width, height];
+      } catch (_) {}
+
+      try {
+        let [x, y] = actor.get_transformed_position();
+        let [width, height] = actor.get_transformed_size();
+
+        if (width > 0 && height > 0)
+          return [x, y, width, height];
+      } catch (_) {}
     }
 
     let frame = metaWindow.get_frame_rect();
     return [frame.x, frame.y, frame.width, frame.height];
   }
 
-  _listRelevantWindows() {
+    _listRelevantWindows() {
     let monitor = this.dock._monitor;
     if (!monitor)
       return [];
@@ -416,7 +426,6 @@ export let AutoHide = class {
     return global.get_window_actors()
       .map(actor => actor.get_meta_window())
       .filter(w => !!w)
-      .filter(w => w.can_close())
       .filter(w => w.get_monitor() === monitor.index)
       .filter(w => {
         let ws = w.get_workspace();
@@ -424,7 +433,6 @@ export let AutoHide = class {
       })
       .filter(w => handledWindowTypes.includes(w.get_window_type()));
   }
-
   _checkOverlap() {
     if (this.extension._inOverview)
       return false;
@@ -448,19 +456,24 @@ export let AutoHide = class {
       return true;
 
     let windows = this._listRelevantWindows();
-    let dockRect = this.dock.struts.get_transformed_position();
-    dockRect.push(this.dock.struts.width);
-    dockRect.push(this.dock.struts.height);
+       let [dockX, dockY] = this.dock.struts.get_transformed_position();
+    let dockRect = [dockX, dockY, this.dock.struts.width, this.dock.struts.height];
 
     let isOverlapped = false;
 
-    windows.forEach(w => {
+        windows.forEach(w => {
       this._track(w);
 
       if (isOverlapped)
         return;
 
+      if (w.minimized)
+        return;
+
       let winRect = this._getWindowRect(w);
+      if (!winRect)
+        return;
+
       if (isOverlapRect(dockRect, winRect))
         isOverlapped = true;
     });
