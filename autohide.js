@@ -275,10 +275,7 @@ _updatePressureBarrier() {
 
     // console.log(arect);
     if (this._barrierForced) {
-      // Si el ratón entra en el dock, el escudo ya cumplió su trabajo
-      if (this.dock._isWithinDash(pointer) || isInRect(arect, pointer)) {
-        this._barrierForced = false;
-      }
+     
       return false; // El escudo impide que se oculte por culpa de Firefox
     } 
 
