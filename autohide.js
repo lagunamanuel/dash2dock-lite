@@ -196,6 +196,7 @@ _updatePressureBarrier() {
     });
   }
   show() {
+    console.log('--- DOCK: Llamando a show() ---');
     if (!this.dock._monitor || this.dock._monitor.inFullscreen) {
       return;
     }
@@ -206,6 +207,7 @@ _updatePressureBarrier() {
   }
 
   hide() {
+    console.log('--- DOCK: Llamando a hide() ---');
     this._dwell = 0;
     this.frameDelay = 10;
     this._shown = false;
