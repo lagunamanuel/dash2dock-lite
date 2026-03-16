@@ -140,19 +140,12 @@ export let AutoHide = class {
   }
 
 _onLeaveEvent() {
- 
-
-this._barrierForced = false; // DESACTIVAMOS EL ESCUDO
-
-if (this._shown) {
-
-this._dwell = 0;
-
-this._debounceCheckHide();
-
-}
-
-} 
+    // ELIMINADA LA LÍNEA DE barrierForced = false;
+    if (this._shown) {
+      this._dwell = 0;
+      this._debounceCheckHide();
+    }
+  } 
 
   _onFocusWindow() {
     this._debounceCheckHide();
@@ -281,10 +274,32 @@ _updatePressureBarrier() {
     let arect = [rect.x, rect.y, rect.w, rect.h];
 
     // console.log(arect);
-    if (this._barrierForced) {
-     
-      return false; // El escudo impide que se oculte por culpa de Firefox
-    } 
+   if (this._barrierForced) {
+      let monitor = this.dock._monitor;
+      let shieldRect = [...arect]; // Clonamos para no romper el resto de la lógica
+
+      // Estiramos el escudo invisible hasta el límite de la pantalla
+      if (monitor) {
+        if (this.dock._position == DockPosition.BOTTOM) {
+          shieldRect[3] = (monitor.y + monitor.height) - shieldRect[1];
+        } else if (this.dock._position == DockPosition.TOP) {
+          shieldRect[1] = monitor.y;
+          shieldRect[3] = (pos[1] + this.dock.struts.height) - monitor.y;
+        } else if (this.dock._position == DockPosition.LEFT) {
+          shieldRect[0] = monitor.x;
+          shieldRect[2] = (pos[0] + this.dock.struts.width) - monitor.x;
+        } else if (this.dock._position == DockPosition.RIGHT) {
+          shieldRect[2] = (monitor.x + monitor.width) - shieldRect[0];
+        }
+      }
+
+      // Si el ratón sale totalmente de nuestra zona estirada, apagamos el escudo
+      if (!isInRect(shieldRect, pointer)) {
+        this._barrierForced = false; 
+      } else {
+        return false; // El ratón sigue merodeando el dock o el borde: ¡PROTEGIDO!
+      }
+    }
 
     if (!this.extension.autohide_dash) {
       return false;
