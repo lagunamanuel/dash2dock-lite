@@ -199,20 +199,15 @@ _updatePressureBarrier() {
       }
     });
   }
-  show() {
-    console.log('--- DOCK: Llamando a show() ---');
+ show() {
+    // console.log('--- DOCK: Llamando a show() ---');
     if (!this.dock._monitor || this.dock._monitor.inFullscreen) {
       return;
     }
     this._dwell = 0;
     this.frameDelay = 0;
     this._shown = true;
-    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
-        if (this._shown && this.dock) {
-            this.dock.slideIn();
-        }
-        return GLib.SOURCE_REMOVE; // Para que el temporizador muera y no haga bucle
-    });
+    this.dock.slideIn();
   }
 
   hide() {
@@ -263,7 +258,29 @@ _updatePressureBarrier() {
     if (this.extension.simulated_pointer) {
       pointer = [...this.extension.simulated_pointer];
     } 
+if (this._barrierForced) {
+      let monitor = this.dock._monitor;
+      if (monitor) {
+        let isNearEdge = false;
+        let safeZone = 150; // 150 píxeles de inmunidad desde el borde de la pantalla
 
+        if (this.dock._position == DockPosition.BOTTOM) {
+          isNearEdge = (pointer[1] >= monitor.y + monitor.height - safeZone);
+        } else if (this.dock._position == DockPosition.TOP) {
+          isNearEdge = (pointer[1] <= monitor.y + safeZone);
+        } else if (this.dock._position == DockPosition.LEFT) {
+          isNearEdge = (pointer[0] <= monitor.x + safeZone);
+        } else if (this.dock._position == DockPosition.RIGHT) {
+          isNearEdge = (pointer[0] >= monitor.x + monitor.width - safeZone);
+        }
+
+        if (isNearEdge) {
+          return false; // El ratón sigue en la zona inferior. ¡SEGURO!
+        } else {
+          this._barrierForced = false; // El ratón se ha ido arriba. Bajamos escudo.
+        }
+      }
+    }
 
 
 
