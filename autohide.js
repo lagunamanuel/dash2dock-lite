@@ -191,8 +191,9 @@ _updatePressureBarrier() {
     this._pressureBarrier.addBarrier(this._edgeBarrier);
 
     this._pressureBarrier.connect('trigger', () => {
-      console.log('¡BARRERA ACTIVADA! El ratón ha chocado contra el borde.');
-      this.show();
+      if (!this._shown) {
+        this.show();
+      }
     });
   }
   show() {
@@ -253,7 +254,11 @@ _updatePressureBarrier() {
     let pointer = global.get_pointer();
     if (this.extension.simulated_pointer) {
       pointer = [...this.extension.simulated_pointer];
-    }
+    } 
+
+    if (this.dock._monitor && pointer[1] >= this.dock._monitor.y + this.dock._monitor.height - 10) {
+    return false; // El ratón está empujando el borde: NO TE ESCONDAS
+}
 
     // console.log(pointer);
 
