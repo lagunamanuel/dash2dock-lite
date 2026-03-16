@@ -1,6 +1,7 @@
 'use strict';
 
 import Meta from 'gi://Meta';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import { DockPosition } from './dock.js';
 import * as Layout from 'resource:///org/gnome/shell/ui/layout.js';
@@ -152,7 +153,7 @@ export let AutoHide = class {
   _onFullScreen() {
     this._debounceCheckHide();
   }
-_updatePressureBarrier() {
+__updatePressureBarrier() {
     // 1. Limpieza de barreras previas
     if (this._pressureBarrier) {
       this._pressureBarrier.destroy();
@@ -168,10 +169,13 @@ _updatePressureBarrier() {
       15, 100, Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW
     );
 
-    // 3. Capturar el monitor activo y sus medidas
-    let monitor = this.dock._monitor;
+    // 3. OBTENER EL MONITOR (A prueba de NullPointerException)
+    let monitorIndex = this.dock._monitorIndex !== undefined ? this.dock._monitorIndex : Main.layoutManager.primaryIndex;
+    let monitor = Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
+    
     if (!monitor) {
-        monitor = this.dock.getMonitor();
+        console.log("AutoHide: Aún no hay monitor disponible, abortando barrera.");
+        return; 
     }
 
     // 4. Instanciar la barrera física exacta con coordenadas
