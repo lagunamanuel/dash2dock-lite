@@ -16,25 +16,20 @@ import {
 const DEBOUNCE_HIDE_TIMEOUT = 120;
 const PRESSURE_SENSE_DISTANCE = 40;
 
-// some codes lifted from dash-to-dock intellihide
 const handledWindowTypes = [
   Meta.WindowType.NORMAL,
-  // Meta.WindowType.DOCK,
   Meta.WindowType.DIALOG,
   Meta.WindowType.MODAL_DIALOG,
-  // Meta.WindowType.TOOLBAR,
-  // Meta.WindowType.MENU,
   Meta.WindowType.UTILITY,
-  // Meta.WindowType.SPLASHSCREEN
 ];
 
 export let AutoHide = class {
   enable() {
     if (this._enabled) return;
-    // console.log('enable autohide');
     this._enabled = true;
     this._shown = true;
     this._dwell = 0;
+    this._barrierForced = false;
     console.log('autohide enabled');
     this._updatePressureBarrier();
   }
@@ -54,7 +49,6 @@ export let AutoHide = class {
     }
 
     this.show();
-
     this._enabled = false;
 
     let actors = global.get_window_actors();
@@ -69,9 +63,7 @@ export let AutoHide = class {
   }
 
   _getScaleFactor() {
-    //! use dock scale factor
-    let scaleFactor = this.dock._monitor.geometry_scale;
-    return scaleFactor;
+    return this.dock._monitor.geometry_scale;
   }
 
   _onMotionEvent() {
@@ -101,14 +93,8 @@ export let AutoHide = class {
 
       if (this.dock.isVertical()) {
         if (
-          // right
-          (this.dock._position == DockPosition.RIGHT &&
-            dy < area &&
-            pointer[0] > monitor.x + sw - 4) ||
-          // left
-          (this.dock._position == DockPosition.LEFT &&
-            dy < area &&
-            pointer[0] < monitor.x + 4)
+          (this.dock._position == DockPosition.RIGHT && dy < area && pointer[0] > monitor.x + sw - 4) ||
+          (this.dock._position == DockPosition.LEFT && dy < area && pointer[0] < monitor.x + 4)
         ) {
           this._dwell++;
         } else {
@@ -116,7 +102,6 @@ export let AutoHide = class {
           this.last_pointer = pointer;
         }
       } else {
-        // bottom
         if (dx < area && pointer[1] + 4 > monitor.y + sh) {
           this._dwell++;
         } else {
@@ -124,8 +109,6 @@ export let AutoHide = class {
           this.last_pointer = pointer;
         }
       }
-
-      // console.log(`${this._dwell} ${dwell_count} ${this.extension.pressure_sense_sensitivity}`);
 
       if (this._dwell > dwell_count) {
         this.show();
@@ -139,12 +122,32 @@ export let AutoHide = class {
     }
   }
 
-_onLeaveEvent() {
+  _onLeaveEvent() {
+    let pointer = global.get_pointer();
+    if (this.extension.simulated_pointer) {
+      pointer = [...this.extension.simulated_pointer];
+    }
+
+    // --- PARCHE GEOMÉTRICO ANTI-HUECO FLOTANTE ---
+    if (this.dock && this.dock.struts) {
+      let pos = this.dock.struts.get_transformed_position();
+      let width = this.dock.struts.width;
+
+      if (this.dock._position == DockPosition.BOTTOM) {
+        // Si el ratón está alineado horizontalmente con el dock y por debajo de su borde superior
+        if (pointer[0] >= pos[0] && pointer[0] <= pos[0] + width && pointer[1] >= pos[1]) {
+          return; // IGNORAR SALIDA: El usuario sigue en el hueco inferior empujando
+        }
+      }
+    }
+    // ---------------------------------------------
+
+    this._barrierForced = false; // Desactivar el escudo al salir físicamente
     if (this._shown) {
       this._dwell = 0;
       this._debounceCheckHide();
     }
-  } 
+  }
 
   _onFocusWindow() {
     this._debounceCheckHide();
@@ -153,8 +156,8 @@ _onLeaveEvent() {
   _onFullScreen() {
     this._debounceCheckHide();
   }
-_updatePressureBarrier() {
-    // 1. Limpieza de barreras previas
+
+  _updatePressureBarrier() {
     if (this._pressureBarrier) {
       this._pressureBarrier.destroy();
       this._pressureBarrier = null;
@@ -164,12 +167,10 @@ _updatePressureBarrier() {
       this._edgeBarrier = null;
     }
 
-    // 2. Crear el gestor de presión lógico
     this._pressureBarrier = new Layout.PressureBarrier(
       15, 100, Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW
     );
 
-    // 3. Capturar el monitor seguro
     let monitorIndex = this.dock._monitorIndex !== undefined ? this.dock._monitorIndex : Main.layoutManager.primaryIndex;
     let monitor = Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
     
@@ -177,7 +178,6 @@ _updatePressureBarrier() {
         return; 
     }
 
-    // 4. La sintaxis REAL de Mutter para el borde inferior
     this._edgeBarrier = new Meta.Barrier({
       backend: global.backend,
       x1: monitor.x,
@@ -187,17 +187,17 @@ _updatePressureBarrier() {
       directions: Meta.BarrierDirection.POSITIVE_Y
     });
 
-    // 5. Unir la barrera al gestor
     this._pressureBarrier.addBarrier(this._edgeBarrier);
 
     this._pressureBarrier.connect('trigger', () => {
       if (!this._shown) {
+        this._barrierForced = true; // Activar el escudo contra Wayland
         this.show();
       }
     });
   }
+
   show() {
-    console.log('--- DOCK: Llamando a show() ---');
     if (!this.dock._monitor || this.dock._monitor.inFullscreen) {
       return;
     }
@@ -208,7 +208,6 @@ _updatePressureBarrier() {
   }
 
   hide() {
-    console.log('--- DOCK: Llamando a hide() ---');
     this._dwell = 0;
     this.frameDelay = 10;
     this._shown = false;
@@ -216,19 +215,12 @@ _updatePressureBarrier() {
   }
 
   _track(window) {
-    //! window tracking should be made global
     if (!window._tracked) {
       window.connectObject(
         'position-changed',
-        // this._debounceCheckHide.bind(this),
-        () => {
-          this.dock.extension.checkHide();
-        },
+        () => { this.dock.extension.checkHide(); },
         'size-changed',
-        // this._debounceCheckHide.bind(this),
-        () => {
-          this.dock.extension.checkHide();
-        },
+        () => { this.dock.extension.checkHide(); },
         this
       );
       window._tracked = true;
@@ -241,87 +233,46 @@ _updatePressureBarrier() {
         window.disconnectObject(this);
         window._tracked = false;
       }
-    } catch (err) {
-      // may have been destroyed already
-    }
+    } catch (err) {}
   }
 
   _checkOverlap() {
-    // console.log("checking overlap...");
-    if (this.extension._inOverview) {
-      return false;
-    }
+    if (this.extension._inOverview) return false;
+    
+    // Si la barrera forzó la salida, el dock es inamovible hasta que saques el ratón
+    if (this._barrierForced) return false;
+
+    if (!this.extension.autohide_dash) return false;
+
     let pointer = global.get_pointer();
     if (this.extension.simulated_pointer) {
       pointer = [...this.extension.simulated_pointer];
-    } 
-
-
-
-
-    // console.log(pointer);
+    }
 
     let pos = this.dock.struts.get_transformed_position();
-    let rect = {
-      x: pos[0],
-      y: pos[1],
-      w: this.dock.struts.width,
-      h: this.dock.struts.height,
-    };
-    //! change to struts rect
-    let arect = [rect.x, rect.y, rect.w, rect.h];
-
-    // console.log(arect);
-    let monitor = this.dock._monitor;
-    if (monitor) {
-      if (this.dock._position == DockPosition.BOTTOM) {
-        arect[3] = (monitor.y + monitor.height) - arect[1];
-      } else if (this.dock._position == DockPosition.TOP) {
-        arect[1] = monitor.y;
-        arect[3] = (pos[1] + this.dock.struts.height) - monitor.y;
-      } else if (this.dock._position == DockPosition.LEFT) {
-        arect[0] = monitor.x;
-        arect[2] = (pos[0] + this.dock.struts.width) - monitor.x;
-      } else if (this.dock._position == DockPosition.RIGHT) {
-        arect[2] = (monitor.x + monitor.width) - arect[0];
-      }
-    }
-    if (!this.extension.autohide_dash) {
-      return false;
-    }
-
-    // console.log("checking pointer location...");
+    let arect = [pos[0], pos[1], this.dock.struts.width, this.dock.struts.height];
 
     if (this.dock._isWithinDash(pointer) || isInRect(arect, pointer)) {
       return false;
     }
 
-    if (!this.extension.autohide_dodge) {
-      return true;
-    }
+    if (!this.extension.autohide_dodge) return true;
 
-    // console.log("checking fullscreen...");
+    if (this.dock._monitor && this.dock._monitor.inFullscreen) return true;
 
-    if (this.dock._monitor && this.dock._monitor.inFullscreen) {
-      return true;
-    }
-
-    // console.log("checking windows...");
-
-     monitor = this.dock._monitor;
+    let monitor = this.dock._monitor;
     let actors = global.get_window_actors();
     let windows = actors.map((a) => {
       let w = a.get_meta_window();
       w._parent = a;
       return w;
     });
+    
     windows = windows.filter((w) => w.can_close());
     windows = windows.filter((w) => w.get_monitor() == monitor.index);
-    // windows = windows.filter((w) => !w.is_override_redirect());
     let workspace = global.workspace_manager.get_active_workspace_index();
     windows = windows.filter(
-      (w) =>
-        workspace == w.get_workspace().index() && w.showing_on_its_workspace()
+      (w) => workspace == w.get_workspace().index() && w.showing_on_its_workspace()
     );
     windows = windows.filter((w) => w.get_window_type() in handledWindowTypes);
 
@@ -343,8 +294,6 @@ _updatePressureBarrier() {
     });
 
     this.windows = windows;
-
-    // console.log(isOverlapped);
     return isOverlapped;
   }
 
@@ -352,9 +301,7 @@ _updatePressureBarrier() {
     if (this.extension._loTimer) {
       if (!this._debounceCheckSeq) {
         this._debounceCheckSeq = this.extension._loTimer.runDebounced(
-          () => {
-            this._checkHide();
-          },
+          () => { this._checkHide(); },
           DEBOUNCE_HIDE_TIMEOUT,
           'debounceCheckHide'
         );
