@@ -518,11 +518,14 @@ export let AutoHide = class {
     }
   }
 
-  _checkHide() {
+    _checkHide() {
     if (!this._enabled)
       return;
 
-    if (this._checkOverlap())
+    let overlapped = this._checkOverlap();
+    log(`[D2D-LITE] _checkHide overlapped=${overlapped} shown=${this._shown}`);
+
+    if (overlapped)
       this.hide();
     else
       this.show();
