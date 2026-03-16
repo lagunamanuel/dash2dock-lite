@@ -986,7 +986,7 @@ export let Animator = class {
         autohide_slowDown;
 
       let v1 = new Vector([targetX, targetY, 0]);
-      let v2 = new Vector([dock.dash.translationX, dock.dash.translationY, 0]);
+      let v2 = new Vector([dock.translationX, dock.translationY, 0]);
       let dst = v1.subtract(v2);
       let mag = dst.magnitude();
       if (mag > 0) {
