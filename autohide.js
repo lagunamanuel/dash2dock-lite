@@ -140,19 +140,11 @@ export let AutoHide = class {
   }
 
 _onLeaveEvent() {
- 
-
-this._barrierForced = false; // DESACTIVAMOS EL ESCUDO
-
-if (this._shown) {
-
-this._dwell = 0;
-
-this._debounceCheckHide();
-
-}
-
-} 
+    if (this._shown) {
+      this._dwell = 0;
+      this._debounceCheckHide();
+    }
+  } 
 
   _onFocusWindow() {
     this._debounceCheckHide();
@@ -200,7 +192,6 @@ _updatePressureBarrier() {
 
     this._pressureBarrier.connect('trigger', () => {
       if (!this._shown) {
-        this._barrierForced = true; // ACTIVAMOS EL ESCUDO LÓGICO
         this.show();
       }
     });
@@ -281,11 +272,20 @@ _updatePressureBarrier() {
     let arect = [rect.x, rect.y, rect.w, rect.h];
 
     // console.log(arect);
-    if (this._barrierForced) {
-     
-      return false; // El escudo impide que se oculte por culpa de Firefox
-    } 
-
+    let monitor = this.dock._monitor;
+    if (monitor) {
+      if (this.dock._position == DockPosition.BOTTOM) {
+        arect[3] = (monitor.y + monitor.height) - arect[1];
+      } else if (this.dock._position == DockPosition.TOP) {
+        arect[1] = monitor.y;
+        arect[3] = (pos[1] + this.dock.struts.height) - monitor.y;
+      } else if (this.dock._position == DockPosition.LEFT) {
+        arect[0] = monitor.x;
+        arect[2] = (pos[0] + this.dock.struts.width) - monitor.x;
+      } else if (this.dock._position == DockPosition.RIGHT) {
+        arect[2] = (monitor.x + monitor.width) - arect[0];
+      }
+    }
     if (!this.extension.autohide_dash) {
       return false;
     }
@@ -308,7 +308,7 @@ _updatePressureBarrier() {
 
     // console.log("checking windows...");
 
-    let monitor = this.dock._monitor;
+     monitor = this.dock._monitor;
     let actors = global.get_window_actors();
     let windows = actors.map((a) => {
       let w = a.get_meta_window();
