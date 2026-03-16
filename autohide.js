@@ -191,6 +191,7 @@ _updatePressureBarrier() {
     this._pressureBarrier.addBarrier(this._edgeBarrier);
 
     this._pressureBarrier.connect('trigger', () => {
+      console.log('¡BARRERA ACTIVADA! El ratón ha chocado contra el borde.');
       this.show();
     });
   }
