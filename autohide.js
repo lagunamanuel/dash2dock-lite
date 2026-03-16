@@ -1,5 +1,6 @@
 'use strict';
 
+import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
@@ -206,7 +207,12 @@ _updatePressureBarrier() {
     this._dwell = 0;
     this.frameDelay = 0;
     this._shown = true;
-    this.dock.slideIn();
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+        if (this._shown && this.dock) {
+            this.dock.slideIn();
+        }
+        return GLib.SOURCE_REMOVE; // Para que el temporizador muera y no haga bucle
+    });
   }
 
   hide() {
