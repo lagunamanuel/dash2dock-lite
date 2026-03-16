@@ -258,9 +258,8 @@ _updatePressureBarrier() {
       pointer = [...this.extension.simulated_pointer];
     } 
 
-    if (this.dock._monitor && pointer[1] >= this.dock._monitor.y + this.dock._monitor.height - 10) {
-    return false; // El ratón está empujando el borde: NO TE ESCONDAS
-}
+
+
 
     // console.log(pointer);
 
