@@ -153,7 +153,7 @@ export let AutoHide = class {
   _onFullScreen() {
     this._debounceCheckHide();
   }
-__updatePressureBarrier() {
+_updatePressureBarrier() {
     // 1. Limpieza de barreras previas
     if (this._pressureBarrier) {
       this._pressureBarrier.destroy();
@@ -169,34 +169,31 @@ __updatePressureBarrier() {
       15, 100, Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW
     );
 
-    // 3. OBTENER EL MONITOR (A prueba de NullPointerException)
+    // 3. Capturar el monitor seguro
     let monitorIndex = this.dock._monitorIndex !== undefined ? this.dock._monitorIndex : Main.layoutManager.primaryIndex;
     let monitor = Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
     
     if (!monitor) {
-        console.log("AutoHide: Aún no hay monitor disponible, abortando barrera.");
         return; 
     }
 
-    // 4. Instanciar la barrera física exacta con coordenadas
+    // 4. La sintaxis REAL de Mutter para el borde inferior
     this._edgeBarrier = new Meta.Barrier({
-      display: global.display,
-      monitor_index: monitor.index,
-      directions: Meta.BarrierDirection.BOTTOM,
+      backend: global.backend,
       x1: monitor.x,
       y1: monitor.y + monitor.height,
       x2: monitor.x + monitor.width,
-      y2: monitor.y + monitor.height
+      y2: monitor.y + monitor.height,
+      directions: Meta.BarrierDirection.POSITIVE_Y
     });
 
-    // 5. Unir la barrera al gestor y configurar el disparador
+    // 5. Unir la barrera al gestor
     this._pressureBarrier.addBarrier(this._edgeBarrier);
 
     this._pressureBarrier.connect('trigger', () => {
       this.show();
     });
   }
-
   show() {
     if (!this.dock._monitor || this.dock._monitor.inFullscreen) {
       return;
