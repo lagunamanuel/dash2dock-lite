@@ -330,7 +330,6 @@ export let Dock = GObject.registerClass(
     }
 
     slideIn() {
-      this.container.get_parent()?.set_child_above_sibling(this.container, null);
       if (this._hidden) {
         this._hidden = false;
         this._beginAnimation();
