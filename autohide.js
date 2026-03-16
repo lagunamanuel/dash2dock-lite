@@ -139,7 +139,21 @@ export let AutoHide = class {
     }
   }
 
-  _onLeaveEvent() {
+_onLeaveEvent() {
+    let pointer = global.get_pointer();
+    if (this.extension.simulated_pointer) {
+      pointer = [...this.extension.simulated_pointer];
+    }
+    let monitor = this.dock._monitor;
+
+    // --- PARCHE ANTI-HUECO ---
+    // Si el ratón está en los últimos 4 píxeles de la pantalla, ignoramos la salida
+    // porque el usuario sigue apoyado contra el borde inferior.
+    if (monitor && pointer[1] >= monitor.y + monitor.height - 4) {
+      return; 
+    }
+    // -------------------------
+
     this._barrierForced = false; // DESACTIVAMOS EL ESCUDO
     if (this._shown) {
       this._dwell = 0;
