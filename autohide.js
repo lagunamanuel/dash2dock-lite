@@ -3,6 +3,8 @@
 import Meta from 'gi://Meta';
 
 import { DockPosition } from './dock.js';
+import * as Layout from 'resource:///org/gnome/shell/ui/layout.js';
+import Shell from 'gi://Shell';
 import {
   get_distance_sqr,
   get_distance,
@@ -33,12 +35,21 @@ export let AutoHide = class {
     this._shown = true;
     this._dwell = 0;
     console.log('autohide enabled');
+    this._updatePressureBarrier();
   }
 
   disable() {
     if (!this._enabled) return;
     if (this.extension._hiTimer) {
       this.extension._hiTimer.cancel(this._animationSeq);
+    }
+    if (this._pressureBarrier) {
+      this._pressureBarrier.destroy();
+      this._pressureBarrier = null;
+    }
+    if (this._edgeBarrier) {
+      this._edgeBarrier.destroy();
+      this._edgeBarrier = null;
     }
 
     this.show();
@@ -140,6 +151,38 @@ export let AutoHide = class {
 
   _onFullScreen() {
     this._debounceCheckHide();
+  }
+  _updatePressureBarrier() {
+    // 1. Limpieza de barreras previas (Lógica exacta de la línea 1004 original)
+    if (this._pressureBarrier) {
+      this._pressureBarrier.destroy();
+      this._pressureBarrier = null;
+    }
+    if (this._edgeBarrier) {
+      this._edgeBarrier.destroy();
+      this._edgeBarrier = null;
+    }
+
+    // 2. Crear la barrera de presión (Lógica exacta de la línea 1017 original)
+    // Umbral de presión: 15, Retraso: 100ms
+    this._pressureBarrier = new Layout.PressureBarrier(
+      15, 100, Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW
+    );
+
+    // 3. Crear el límite físico en la pantalla
+    let monitorIndex = this.dock._monitorIndex || 0;
+    this._edgeBarrier = global.display.get_monitor_barrier(
+      monitorIndex, 
+      Meta.BarrierDirection.BOTTOM
+    );
+
+    // 4. Unir el límite físico al gestor de presión (Línea 1168 original)
+    this._pressureBarrier.addBarrier(this._edgeBarrier);
+
+    // 5. El evento: disparar al chocar (Línea 1020 original)
+    this._pressureBarrier.connect('trigger', () => {
+      this.show();
+    });
   }
 
   show() {
