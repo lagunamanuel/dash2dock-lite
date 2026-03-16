@@ -54,16 +54,18 @@ export let Dock = GObject.registerClass(
   class DashToDock extends St.Widget {
     _init(params) {
       super._init({
-  name: 'dashtodockContainer',
-  style_class: 'bottom',
-  reactive: false,
-  track_hover: false,
-  width: 0,
-  height: 0,
-  clip_to_allocation: false,
-  x_align: Clutter.ActorAlign.CENTER,
-  y_align: Clutter.ActorAlign.CENTER,
-});
+        // name: 'd2daDock',
+        name: 'dashtodockContainer',
+        style_class: 'bottom',
+        reactive: false,
+        track_hover: false,
+        width: 0,
+        height: 0,
+        clip_to_allocation: true,
+        x_align: Clutter.ActorAlign.CENTER,
+        y_align: Clutter.ActorAlign.CENTER,
+        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
+      });
 
       this.extension = params.extension;
 
@@ -95,10 +97,11 @@ export let Dock = GObject.registerClass(
       this.fake_dash.visible = false;
 
       this.renderArea = new St.Widget({
-  name: 'DockRenderArea',
-  reactive: false,
-  track_hover: false,
-});
+        name: 'DockRenderArea',
+        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
+        reactive: false,
+        track_hover: false,
+      });
       this.renderArea.opacity = 0;
       this.add_child(this.renderArea);
 
@@ -118,13 +121,15 @@ export let Dock = GObject.registerClass(
       }
 
       this.struts = new St.Widget({
-  name: 'DockStruts',
-});
-this.dwell = new St.Widget({
-  name: 'DockDwell',
-  reactive: true,
-  track_hover: true,
-});
+        name: 'DockStruts',
+        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
+      });
+      this.dwell = new St.Widget({
+        name: 'DockDwell',
+        reactive: true,
+        track_hover: true,
+        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
+      });
       this.dwell.connectObject(
         'motion-event',
         this.autohider._onMotionEvent.bind(this.autohider),
@@ -324,24 +329,22 @@ this.dwell = new St.Widget({
       });
     }
 
-   slideIn() {
-  log('[D2D-LITE] slideIn called');
-  if (this._hidden) {
-    this._hidden = false;
-    this._beginAnimation('slideIn');
-  }
-}
+    slideIn() {
+      if (this._hidden) {
+        this._hidden = false;
+        this._beginAnimation();
+      }
+    }
 
-slideOut() {
-  log('[D2D-LITE] slideOut called');
-  if (this._list && this._list.visible) {
-    return;
-  }
-  if (!this._hidden) {
-    this._hidden = true;
-    this._beginAnimation('slideOut');
-  }
-}
+    slideOut() {
+      if (this._list && this._list.visible) {
+        return;
+      }
+      if (!this._hidden) {
+        this._hidden = true;
+        this._beginAnimation();
+      }
+    }
 
     getMonitor() {
       this._monitorIndex = this.extension._queryDisplay(this._monitorIndex);
@@ -458,27 +461,6 @@ slideOut() {
         this._position == DockPosition.LEFT ||
         this._position == DockPosition.RIGHT
       );
-    }
-        _queueVisualSync() {
-      [
-        this,
-        this.dash,
-        this.renderArea,
-        this._background,
-        this.struts,
-        this.dwell,
-      ].forEach((actor) => {
-        if (!actor)
-          return;
-
-        try {
-          actor.queue_relayout();
-        } catch (_) {}
-
-        try {
-          actor.queue_redraw();
-        } catch (_) {}
-      });
     }
 
     _preferredIconSize() {
@@ -1137,7 +1119,7 @@ slideOut() {
           this.dwell.y = this.y;
         }
       }
-      this._queueVisualSync();
+
       return true;
     }
 
@@ -1227,39 +1209,37 @@ slideOut() {
     }
 
     _beginAnimation(caller) {
-  if (this.extension.debug_visual) {
-    this.add_style_class_name('hi');
-    this.struts.add_style_class_name('hi');
-    this.dwell.add_style_class_name('hi');
-  }
+      if (this.extension.debug_visual) {
+        this.add_style_class_name('hi');
+        this.struts.add_style_class_name('hi');
+        this.dwell.add_style_class_name('hi');
+      }
 
-  this._favorite_ids = Fav.getAppFavorites()._getIds();
-  this._queueVisualSync();
+      this._favorite_ids = Fav.getAppFavorites()._getIds();
 
-  if (this.extension._hiTimer && this.debounceEndSeq) {
-    this.extension._loTimer.runDebounced(this.debounceEndSeq);
-  }
+      // if (caller) {
+      //   console.log(`animation triggered by ${caller}`);
+      // }
+      if (this.extension._hiTimer && this.debounceEndSeq) {
+        this.extension._loTimer.runDebounced(this.debounceEndSeq);
+        // this.extension._loTimer.cancel(this.debounceEndSeq);
+      }
 
-  this.animationInterval = this.extension.animationInterval;
-
-  if (this.extension._hiTimer) {
-    if (!this._animationSeq) {
-      this._animationSeq = this.extension._hiTimer.runLoop(
-        (s) => {
-          this.animate(s._delay);
-        },
-        this.animationInterval,
-        'animationTimer'
-      );
-    } else {
-      this.extension._hiTimer.runLoop(this._animationSeq);
+      this.animationInterval = this.extension.animationInterval;
+      if (this.extension._hiTimer) {
+        if (!this._animationSeq) {
+          this._animationSeq = this.extension._hiTimer.runLoop(
+            (s) => {
+              this.animate(s._delay);
+            },
+            this.animationInterval,
+            'animationTimer'
+          );
+        } else {
+          this.extension._hiTimer.runLoop(this._animationSeq);
+        }
+      }
     }
-
-    this.extension._hiTimer.runOnce(() => {
-      this._queueVisualSync();
-    }, 16);
-  }
-}
 
     _endAnimation() {
       if (this.extension.debug_visual) {

@@ -1,13 +1,11 @@
 'use strict';
 
 import Meta from 'gi://Meta';
-import GLib from 'gi://GLib';
-import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import { DockPosition } from './dock.js';
-import * as Layout from 'resource:///org/gnome/shell/ui/layout.js';
-import Shell from 'gi://Shell';
 import {
+  get_distance_sqr,
+  get_distance,
   isInRect,
   isOverlapRect,
 } from './utils.js';
@@ -15,75 +13,62 @@ import {
 const DEBOUNCE_HIDE_TIMEOUT = 120;
 const PRESSURE_SENSE_DISTANCE = 40;
 
+// some codes lifted from dash-to-dock intellihide
 const handledWindowTypes = [
   Meta.WindowType.NORMAL,
+  // Meta.WindowType.DOCK,
   Meta.WindowType.DIALOG,
   Meta.WindowType.MODAL_DIALOG,
+  // Meta.WindowType.TOOLBAR,
+  // Meta.WindowType.MENU,
   Meta.WindowType.UTILITY,
+  // Meta.WindowType.SPLASHSCREEN
 ];
 
 export let AutoHide = class {
   enable() {
-    if (this._enabled)
-      return;
-
+    if (this._enabled) return;
+    // console.log('enable autohide');
     this._enabled = true;
     this._shown = true;
     this._dwell = 0;
-    this._debounceCheckSeq = null;
-    this._idleCheckId = 0;
-    this._trackedActors = new Map();
-    this._displaySignals = [];
-    this._workspaceSignals = [];
-
     console.log('autohide enabled');
-
-    this._updatePressureBarrier();
-    this._connectGlobalSignals();
-    this._trackExistingWindows();
-
-    this._debounceCheckHide();
-    this._queueIdleCheck();
   }
 
   disable() {
-    if (!this._enabled)
-      return;
-
-    if (this.extension._hiTimer)
+    if (!this._enabled) return;
+    if (this.extension._hiTimer) {
       this.extension._hiTimer.cancel(this._animationSeq);
-
-    if (this._pressureBarrier) {
-      this._pressureBarrier.destroy();
-      this._pressureBarrier = null;
     }
-
-    if (this._edgeBarrier) {
-      this._edgeBarrier.destroy();
-      this._edgeBarrier = null;
-    }
-
-    this._disconnectGlobalSignals();
-    this._untrackAllWindows();
-    this._clearIdleCheck();
 
     this.show();
+
     this._enabled = false;
+
+    let actors = global.get_window_actors();
+    let windows = actors.map((a) => a.get_meta_window());
+    windows.forEach((w) => {
+      if (w._tracked) {
+        this._untrack(w);
+      }
+    });
 
     console.log('autohide disabled');
   }
 
   _getScaleFactor() {
-    return this.dock._monitor.geometry_scale;
+    //! use dock scale factor
+    let scaleFactor = this.dock._monitor.geometry_scale;
+    return scaleFactor;
   }
 
   _onMotionEvent() {
     if (this.extension.pressure_sense && !this._shown) {
       let monitor = this.dock._monitor;
       let pointer = global.get_pointer();
-
-      if (this.extension.simulated_pointer)
+      if (this.extension.simulated_pointer) {
         pointer = [...this.extension.simulated_pointer];
+      }
 
       let sw = monitor.width;
       let sh = monitor.height;
@@ -99,12 +84,19 @@ export let AutoHide = class {
         dy = dy * dy;
       }
 
-      let dwell_count = 80 - 60 * (this.extension.pressure_sense_sensitivity || 0);
+      let dwell_count =
+        80 - 60 * (this.extension.pressure_sense_sensitivity || 0);
 
       if (this.dock.isVertical()) {
         if (
-          (this.dock._position === DockPosition.RIGHT && dy < area && pointer[0] > monitor.x + sw - 4) ||
-          (this.dock._position === DockPosition.LEFT && dy < area && pointer[0] < monitor.x + 4)
+          // right
+          (this.dock._position == DockPosition.RIGHT &&
+            dy < area &&
+            pointer[0] > monitor.x + sw - 4) ||
+          // left
+          (this.dock._position == DockPosition.LEFT &&
+            dy < area &&
+            pointer[0] < monitor.x + 4)
         ) {
           this._dwell++;
         } else {
@@ -112,6 +104,7 @@ export let AutoHide = class {
           this.last_pointer = pointer;
         }
       } else {
+        // bottom
         if (dx < area && pointer[1] + 4 > monitor.y + sh) {
           this._dwell++;
         } else {
@@ -120,81 +113,39 @@ export let AutoHide = class {
         }
       }
 
-      if (this._dwell > dwell_count)
+      // console.log(`${this._dwell} ${dwell_count} ${this.extension.pressure_sense_sensitivity}`);
+
+      if (this._dwell > dwell_count) {
         this.show();
+      }
     }
   }
 
   _onEnterEvent() {
-    if (!this.extension.pressure_sense)
+    if (!this.extension.pressure_sense) {
       this.show();
+    }
   }
 
   _onLeaveEvent() {
     if (this._shown) {
       this._dwell = 0;
       this._debounceCheckHide();
-      this._queueIdleCheck();
     }
   }
 
   _onFocusWindow() {
     this._debounceCheckHide();
-    this._queueIdleCheck();
   }
 
   _onFullScreen() {
     this._debounceCheckHide();
-    this._queueIdleCheck();
-  }
-
-  _updatePressureBarrier() {
-    if (this._pressureBarrier) {
-      this._pressureBarrier.destroy();
-      this._pressureBarrier = null;
-    }
-
-    if (this._edgeBarrier) {
-      this._edgeBarrier.destroy();
-      this._edgeBarrier = null;
-    }
-
-    this._pressureBarrier = new Layout.PressureBarrier(
-      15,
-      100,
-      Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW
-    );
-
-    let monitorIndex = this.dock._monitorIndex !== undefined
-      ? this.dock._monitorIndex
-      : Main.layoutManager.primaryIndex;
-
-    let monitor = Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
-
-    if (!monitor)
-      return;
-
-    this._edgeBarrier = new Meta.Barrier({
-      backend: global.backend,
-      x1: monitor.x,
-      y1: monitor.y + monitor.height,
-      x2: monitor.x + monitor.width,
-      y2: monitor.y + monitor.height,
-      directions: Meta.BarrierDirection.POSITIVE_Y,
-    });
-
-    this._pressureBarrier.addBarrier(this._edgeBarrier);
-
-    this._pressureBarrier.connect('trigger', () => {
-      if (!this._shown)
-        this.show();
-    });
   }
 
   show() {
-    if (!this.dock._monitor || this.dock._monitor.inFullscreen)
+    if (!this.dock._monitor || this.dock._monitor.inFullscreen) {
       return;
-
+    }
     this._dwell = 0;
     this.frameDelay = 0;
     this._shown = true;
@@ -208,326 +159,146 @@ export let AutoHide = class {
     this.dock.slideOut();
   }
 
-  _connectGlobalSignals() {
-    this._displaySignals.push(
-      global.display.connect('window-created', (_display, metaWindow) => {
-        this._track(metaWindow);
-        this._debounceCheckHide();
-        this._queueIdleCheck();
-      })
-    );
-
-    this._displaySignals.push(
-      global.display.connect('restacked', () => {
-        this._debounceCheckHide();
-        this._queueIdleCheck();
-      })
-    );
-
-    this._displaySignals.push(
-      global.display.connect('notify::focus-window', () => {
-        this._debounceCheckHide();
-        this._queueIdleCheck();
-      })
-    );
-
-    this._workspaceSignals.push(
-      global.workspace_manager.connect('active-workspace-changed', () => {
-        this._trackExistingWindows();
-        this._debounceCheckHide();
-        this._queueIdleCheck();
-      })
-    );
-
-    this._displaySignals.push(
-      Main.layoutManager.connect('monitors-changed', () => {
-        this._updatePressureBarrier();
-        this._trackExistingWindows();
-        this._debounceCheckHide();
-        this._queueIdleCheck();
-      })
-    );
+  _track(window) {
+    //! window tracking should be made global
+    if (!window._tracked) {
+      window.connectObject(
+        'position-changed',
+        // this._debounceCheckHide.bind(this),
+        () => {
+          this.dock.extension.checkHide();
+        },
+        'size-changed',
+        // this._debounceCheckHide.bind(this),
+        () => {
+          this.dock.extension.checkHide();
+        },
+        this
+      );
+      window._tracked = true;
+    }
   }
 
-  _disconnectGlobalSignals() {
-    if (this._displaySignals) {
-      this._displaySignals.forEach(id => {
-        try {
-          global.display.disconnect(id);
-        } catch (_) {}
-      });
-      this._displaySignals = [];
-    }
-
-    if (this._workspaceSignals) {
-      this._workspaceSignals.forEach(id => {
-        try {
-          global.workspace_manager.disconnect(id);
-        } catch (_) {}
-      });
-      this._workspaceSignals = [];
-    }
-
+  _untrack(window) {
     try {
-      Main.layoutManager.disconnectObject?.(this);
-    } catch (_) {}
-  }
-
-  _trackExistingWindows() {
-    let actors = global.get_window_actors();
-    let windows = actors
-      .map(actor => actor.get_meta_window())
-      .filter(w => !!w);
-
-    windows.forEach(w => this._track(w));
-  }
-
-  _track(metaWindow) {
-    if (!metaWindow)
-      return;
-
-    let actor = metaWindow.get_compositor_private();
-    if (!actor)
-      return;
-
-    if (this._trackedActors.has(actor))
-      return;
-
-    let allocationId = actor.connect('notify::allocation', () => {
-      this._debounceCheckHide();
-      this._queueIdleCheck();
-    });
-
-    let visibleId = actor.connect('notify::visible', () => {
-      this._debounceCheckHide();
-      this._queueIdleCheck();
-    });
-
-    let destroyId = actor.connect('destroy', () => {
-      this._untrack(metaWindow);
-      this._debounceCheckHide();
-      this._queueIdleCheck();
-    });
-
-    this._trackedActors.set(actor, {
-      metaWindow,
-      allocationId,
-      visibleId,
-      destroyId,
-    });
-  }
-
-  _untrack(metaWindow) {
-    if (!metaWindow)
-      return;
-
-    let actor = metaWindow.get_compositor_private();
-    if (!actor)
-      return;
-
-    let signals = this._trackedActors?.get(actor);
-    if (!signals)
-      return;
-
-    try {
-      actor.disconnect(signals.allocationId);
-    } catch (_) {}
-
-    try {
-      actor.disconnect(signals.visibleId);
-    } catch (_) {}
-
-    try {
-      actor.disconnect(signals.destroyId);
-    } catch (_) {}
-
-    this._trackedActors.delete(actor);
-  }
-
-  _untrackAllWindows() {
-    if (!this._trackedActors)
-      return;
-
-    for (let [actor, signals] of this._trackedActors.entries()) {
-      try {
-        actor.disconnect(signals.allocationId);
-      } catch (_) {}
-
-      try {
-        actor.disconnect(signals.visibleId);
-      } catch (_) {}
-
-      try {
-        actor.disconnect(signals.destroyId);
-      } catch (_) {}
+      if (window && window._tracked) {
+        window.disconnectObject(this);
+        window._tracked = false;
+      }
+    } catch (err) {
+      // may have been destroyed already
     }
-
-    this._trackedActors.clear();
   }
 
-  _getDockWatchRect() {
-    let pos = this.dock.struts.get_transformed_position();
-    let arect = [pos[0], pos[1], this.dock.struts.width, this.dock.struts.height];
-
-    let monitor = this.dock._monitor;
-    if (!monitor)
-      return arect;
-
-    if (this.dock._position === DockPosition.BOTTOM) {
-      arect[3] = (monitor.y + monitor.height) - arect[1];
-    } else if (this.dock._position === DockPosition.TOP) {
-      let bottomEdge = arect[1] + arect[3];
-      arect[1] = monitor.y;
-      arect[3] = bottomEdge - monitor.y;
-    } else if (this.dock._position === DockPosition.LEFT) {
-      let rightEdge = arect[0] + arect[2];
-      arect[0] = monitor.x;
-      arect[2] = rightEdge - monitor.x;
-    } else if (this.dock._position === DockPosition.RIGHT) {
-      arect[2] = (monitor.x + monitor.width) - arect[0];
-    }
-
-    return arect;
-  }
-
-    _getWindowRect(metaWindow) {
-    let actor = metaWindow.get_compositor_private();
-
-    if (actor) {
-      try {
-        let box = actor.get_allocation_box();
-        let width = box.x2 - box.x1;
-        let height = box.y2 - box.y1;
-
-        if (width > 0 && height > 0)
-          return [box.x1, box.y1, width, height];
-      } catch (_) {}
-
-      try {
-        let [x, y] = actor.get_transformed_position();
-        let [width, height] = actor.get_transformed_size();
-
-        if (width > 0 && height > 0)
-          return [x, y, width, height];
-      } catch (_) {}
-    }
-
-    let frame = metaWindow.get_frame_rect();
-    return [frame.x, frame.y, frame.width, frame.height];
-  }
-
-    _listRelevantWindows() {
-    let monitor = this.dock._monitor;
-    if (!monitor)
-      return [];
-
-    let activeWorkspace = global.workspace_manager.get_active_workspace_index();
-
-    return global.get_window_actors()
-      .map(actor => actor.get_meta_window())
-      .filter(w => !!w)
-      .filter(w => w.get_monitor() === monitor.index)
-      .filter(w => {
-        let ws = w.get_workspace();
-        return ws && ws.index() === activeWorkspace && w.showing_on_its_workspace();
-      })
-      .filter(w => handledWindowTypes.includes(w.get_window_type()));
-  }
   _checkOverlap() {
-    if (this.extension._inOverview)
+    // console.log("checking overlap...");
+    if (this.extension._inOverview) {
       return false;
-
+    }
     let pointer = global.get_pointer();
-    if (this.extension.simulated_pointer)
+    if (this.extension.simulated_pointer) {
       pointer = [...this.extension.simulated_pointer];
+    }
 
-    let arect = this._getDockWatchRect();
+    // console.log(pointer);
 
-    if (!this.extension.autohide_dash)
+    let pos = this.dock.struts.get_transformed_position();
+    let rect = {
+      x: pos[0],
+      y: pos[1],
+      w: this.dock.struts.width,
+      h: this.dock.struts.height,
+    };
+    //! change to struts rect
+    let arect = [rect.x, rect.y, rect.w, rect.h];
+
+    // console.log(arect);
+
+    if (!this.extension.autohide_dash) {
       return false;
+    }
 
-    if (this.dock._isWithinDash(pointer) || isInRect(arect, pointer))
+    // console.log("checking pointer location...");
+
+    if (this.dock._isWithinDash(pointer) || isInRect(arect, pointer)) {
       return false;
+    }
 
-    if (!this.extension.autohide_dodge)
+    if (!this.extension.autohide_dodge) {
       return true;
+    }
 
-    if (this.dock._monitor && this.dock._monitor.inFullscreen)
+    // console.log("checking fullscreen...");
+
+    if (this.dock._monitor && this.dock._monitor.inFullscreen) {
       return true;
+    }
 
-    let windows = this._listRelevantWindows();
-       let [dockX, dockY] = this.dock.struts.get_transformed_position();
-    let dockRect = [dockX, dockY, this.dock.struts.width, this.dock.struts.height];
+    // console.log("checking windows...");
+
+    let monitor = this.dock._monitor;
+    let actors = global.get_window_actors();
+    let windows = actors.map((a) => {
+      let w = a.get_meta_window();
+      w._parent = a;
+      return w;
+    });
+    windows = windows.filter((w) => w.can_close());
+    windows = windows.filter((w) => w.get_monitor() == monitor.index);
+    // windows = windows.filter((w) => !w.is_override_redirect());
+    let workspace = global.workspace_manager.get_active_workspace_index();
+    windows = windows.filter(
+      (w) =>
+        workspace == w.get_workspace().index() && w.showing_on_its_workspace()
+    );
+    windows = windows.filter((w) => w.get_window_type() in handledWindowTypes);
 
     let isOverlapped = false;
+    let dockRect = this.dock.struts.get_transformed_position();
+    dockRect.push(this.dock.struts.width);
+    dockRect.push(this.dock.struts.height);
 
-        windows.forEach(w => {
+    windows.forEach((w) => {
       this._track(w);
+      if (isOverlapped) return;
 
-      if (isOverlapped)
-        return;
+      let frame = w.get_frame_rect();
+      let win = [frame.x, frame.y, frame.width, frame.height];
 
-      if (w.minimized)
-        return;
-
-      let winRect = this._getWindowRect(w);
-      if (!winRect)
-        return;
-
-      if (isOverlapRect(dockRect, winRect))
+      if (isOverlapRect(dockRect, win)) {
         isOverlapped = true;
+      }
     });
 
     this.windows = windows;
+
+    // console.log(isOverlapped);
     return isOverlapped;
   }
 
-  _clearIdleCheck() {
-    if (this._idleCheckId) {
-      GLib.source_remove(this._idleCheckId);
-      this._idleCheckId = 0;
-    }
-  }
-
-  _queueIdleCheck() {
-    this._clearIdleCheck();
-
-    this._idleCheckId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-      this._idleCheckId = 0;
-      this._checkHide();
-      return GLib.SOURCE_REMOVE;
-    });
-  }
-
   _debounceCheckHide() {
-    if (!this.extension._loTimer) {
-      this._checkHide();
-      return;
-    }
-
-    if (!this._debounceCheckSeq) {
-      this._debounceCheckSeq = this.extension._loTimer.runDebounced(
-        () => {
-          this._checkHide();
-        },
-        DEBOUNCE_HIDE_TIMEOUT,
-        'debounceCheckHide'
-      );
-    } else {
-      this.extension._loTimer.runDebounced(this._debounceCheckSeq);
+    if (this.extension._loTimer) {
+      if (!this._debounceCheckSeq) {
+        this._debounceCheckSeq = this.extension._loTimer.runDebounced(
+          () => {
+            this._checkHide();
+          },
+          DEBOUNCE_HIDE_TIMEOUT,
+          'debounceCheckHide'
+        );
+      } else {
+        this.extension._loTimer.runDebounced(this._debounceCheckSeq);
+      }
     }
   }
 
-    _checkHide() {
-    if (!this._enabled)
-      return;
-
-    let overlapped = this._checkOverlap();
-    log(`[D2D-LITE] _checkHide overlapped=${overlapped} shown=${this._shown}`);
-
-    if (overlapped)
-      this.hide();
-    else
-      this.show();
+  _checkHide() {
+    if (this._enabled) {
+      if (this._checkOverlap()) {
+        this.hide();
+      } else {
+        this.show();
+      }
+    }
   }
 };
