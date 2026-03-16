@@ -152,8 +152,8 @@ export let AutoHide = class {
   _onFullScreen() {
     this._debounceCheckHide();
   }
-  _updatePressureBarrier() {
-    // 1. Limpieza de barreras previas (Lógica exacta de la línea 1004 original)
+_updatePressureBarrier() {
+    // 1. Limpieza de barreras previas
     if (this._pressureBarrier) {
       this._pressureBarrier.destroy();
       this._pressureBarrier = null;
@@ -163,23 +163,31 @@ export let AutoHide = class {
       this._edgeBarrier = null;
     }
 
-    // 2. Crear la barrera de presión (Lógica exacta de la línea 1017 original)
-    // Umbral de presión: 15, Retraso: 100ms
+    // 2. Crear el gestor de presión lógico
     this._pressureBarrier = new Layout.PressureBarrier(
       15, 100, Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW
     );
 
-    // 3. Crear el límite físico en la pantalla
-    let monitorIndex = this.dock._monitorIndex || 0;
-    this._edgeBarrier = global.display.get_monitor_barrier(
-      monitorIndex, 
-      Meta.BarrierDirection.BOTTOM
-    );
+    // 3. Capturar el monitor activo y sus medidas
+    let monitor = this.dock._monitor;
+    if (!monitor) {
+        monitor = this.dock.getMonitor();
+    }
 
-    // 4. Unir el límite físico al gestor de presión (Línea 1168 original)
+    // 4. Instanciar la barrera física exacta con coordenadas
+    this._edgeBarrier = new Meta.Barrier({
+      display: global.display,
+      monitor_index: monitor.index,
+      directions: Meta.BarrierDirection.BOTTOM,
+      x1: monitor.x,
+      y1: monitor.y + monitor.height,
+      x2: monitor.x + monitor.width,
+      y2: monitor.y + monitor.height
+    });
+
+    // 5. Unir la barrera al gestor y configurar el disparador
     this._pressureBarrier.addBarrier(this._edgeBarrier);
 
-    // 5. El evento: disparar al chocar (Línea 1020 original)
     this._pressureBarrier.connect('trigger', () => {
       this.show();
     });
