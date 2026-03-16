@@ -324,35 +324,22 @@ this.dwell = new St.Widget({
       });
     }
 
-    slideIn() {
+   slideIn() {
+  log('[D2D-LITE] slideIn called');
   if (this._hidden) {
     this._hidden = false;
-    this._queueVisualSync();
     this._beginAnimation('slideIn');
-
-    if (this.extension._hiTimer) {
-      this.extension._hiTimer.runOnce(() => {
-        this._queueVisualSync();
-      }, 16);
-    }
   }
 }
 
 slideOut() {
+  log('[D2D-LITE] slideOut called');
   if (this._list && this._list.visible) {
     return;
   }
-
   if (!this._hidden) {
     this._hidden = true;
-    this._queueVisualSync();
     this._beginAnimation('slideOut');
-
-    if (this.extension._hiTimer) {
-      this.extension._hiTimer.runOnce(() => {
-        this._queueVisualSync();
-      }, 16);
-    }
   }
 }
 
