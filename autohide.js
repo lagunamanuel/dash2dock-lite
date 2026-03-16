@@ -140,6 +140,7 @@ export let AutoHide = class {
   }
 
   _onLeaveEvent() {
+    this._barrierForced = false; // DESACTIVAMOS EL ESCUDO
     if (this._shown) {
       this._dwell = 0;
       this._debounceCheckHide();
@@ -192,6 +193,7 @@ _updatePressureBarrier() {
 
     this._pressureBarrier.connect('trigger', () => {
       if (!this._shown) {
+        this._barrierForced = true; // ACTIVAMOS EL ESCUDO LÓGICO
         this.show();
       }
     });
@@ -273,6 +275,13 @@ _updatePressureBarrier() {
     let arect = [rect.x, rect.y, rect.w, rect.h];
 
     // console.log(arect);
+    if (this._barrierForced) {
+      // Si el ratón entra en el dock, el escudo ya cumplió su trabajo
+      if (this.dock._isWithinDash(pointer) || isInRect(arect, pointer)) {
+        this._barrierForced = false;
+      }
+      return false; // El escudo impide que se oculte por culpa de Firefox
+    } 
 
     if (!this.extension.autohide_dash) {
       return false;
