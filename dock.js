@@ -54,18 +54,16 @@ export let Dock = GObject.registerClass(
   class DashToDock extends St.Widget {
     _init(params) {
       super._init({
-        // name: 'd2daDock',
-        name: 'dashtodockContainer',
-        style_class: 'bottom',
-        reactive: false,
-        track_hover: false,
-        width: 0,
-        height: 0,
-        clip_to_allocation: true,
-        x_align: Clutter.ActorAlign.CENTER,
-        y_align: Clutter.ActorAlign.CENTER,
-        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
-      });
+  name: 'dashtodockContainer',
+  style_class: 'bottom',
+  reactive: false,
+  track_hover: false,
+  width: 0,
+  height: 0,
+  clip_to_allocation: false,
+  x_align: Clutter.ActorAlign.CENTER,
+  y_align: Clutter.ActorAlign.CENTER,
+});
 
       this.extension = params.extension;
 
@@ -97,11 +95,10 @@ export let Dock = GObject.registerClass(
       this.fake_dash.visible = false;
 
       this.renderArea = new St.Widget({
-        name: 'DockRenderArea',
-        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
-        reactive: false,
-        track_hover: false,
-      });
+  name: 'DockRenderArea',
+  reactive: false,
+  track_hover: false,
+});
       this.renderArea.opacity = 0;
       this.add_child(this.renderArea);
 
@@ -121,15 +118,13 @@ export let Dock = GObject.registerClass(
       }
 
       this.struts = new St.Widget({
-        name: 'DockStruts',
-        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
-      });
-      this.dwell = new St.Widget({
-        name: 'DockDwell',
-        reactive: true,
-        track_hover: true,
-        offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
-      });
+  name: 'DockStruts',
+});
+this.dwell = new St.Widget({
+  name: 'DockDwell',
+  reactive: true,
+  track_hover: true,
+});
       this.dwell.connectObject(
         'motion-event',
         this.autohider._onMotionEvent.bind(this.autohider),
@@ -330,21 +325,36 @@ export let Dock = GObject.registerClass(
     }
 
     slideIn() {
-      if (this._hidden) {
-        this._hidden = false;
-        this._beginAnimation();
-      }
-    }
+  if (this._hidden) {
+    this._hidden = false;
+    this._queueVisualSync();
+    this._beginAnimation('slideIn');
 
-    slideOut() {
-      if (this._list && this._list.visible) {
-        return;
-      }
-      if (!this._hidden) {
-        this._hidden = true;
-        this._beginAnimation();
-      }
+    if (this.extension._hiTimer) {
+      this.extension._hiTimer.runOnce(() => {
+        this._queueVisualSync();
+      }, 16);
     }
+  }
+}
+
+slideOut() {
+  if (this._list && this._list.visible) {
+    return;
+  }
+
+  if (!this._hidden) {
+    this._hidden = true;
+    this._queueVisualSync();
+    this._beginAnimation('slideOut');
+
+    if (this.extension._hiTimer) {
+      this.extension._hiTimer.runOnce(() => {
+        this._queueVisualSync();
+      }, 16);
+    }
+  }
+}
 
     getMonitor() {
       this._monitorIndex = this.extension._queryDisplay(this._monitorIndex);
@@ -461,6 +471,27 @@ export let Dock = GObject.registerClass(
         this._position == DockPosition.LEFT ||
         this._position == DockPosition.RIGHT
       );
+    }
+        _queueVisualSync() {
+      [
+        this,
+        this.dash,
+        this.renderArea,
+        this._background,
+        this.struts,
+        this.dwell,
+      ].forEach((actor) => {
+        if (!actor)
+          return;
+
+        try {
+          actor.queue_relayout();
+        } catch (_) {}
+
+        try {
+          actor.queue_redraw();
+        } catch (_) {}
+      });
     }
 
     _preferredIconSize() {
@@ -1119,7 +1150,7 @@ export let Dock = GObject.registerClass(
           this.dwell.y = this.y;
         }
       }
-
+      this._queueVisualSync();
       return true;
     }
 
@@ -1209,37 +1240,39 @@ export let Dock = GObject.registerClass(
     }
 
     _beginAnimation(caller) {
-      if (this.extension.debug_visual) {
-        this.add_style_class_name('hi');
-        this.struts.add_style_class_name('hi');
-        this.dwell.add_style_class_name('hi');
-      }
+  if (this.extension.debug_visual) {
+    this.add_style_class_name('hi');
+    this.struts.add_style_class_name('hi');
+    this.dwell.add_style_class_name('hi');
+  }
 
-      this._favorite_ids = Fav.getAppFavorites()._getIds();
+  this._favorite_ids = Fav.getAppFavorites()._getIds();
+  this._queueVisualSync();
 
-      // if (caller) {
-      //   console.log(`animation triggered by ${caller}`);
-      // }
-      if (this.extension._hiTimer && this.debounceEndSeq) {
-        this.extension._loTimer.runDebounced(this.debounceEndSeq);
-        // this.extension._loTimer.cancel(this.debounceEndSeq);
-      }
+  if (this.extension._hiTimer && this.debounceEndSeq) {
+    this.extension._loTimer.runDebounced(this.debounceEndSeq);
+  }
 
-      this.animationInterval = this.extension.animationInterval;
-      if (this.extension._hiTimer) {
-        if (!this._animationSeq) {
-          this._animationSeq = this.extension._hiTimer.runLoop(
-            (s) => {
-              this.animate(s._delay);
-            },
-            this.animationInterval,
-            'animationTimer'
-          );
-        } else {
-          this.extension._hiTimer.runLoop(this._animationSeq);
-        }
-      }
+  this.animationInterval = this.extension.animationInterval;
+
+  if (this.extension._hiTimer) {
+    if (!this._animationSeq) {
+      this._animationSeq = this.extension._hiTimer.runLoop(
+        (s) => {
+          this.animate(s._delay);
+        },
+        this.animationInterval,
+        'animationTimer'
+      );
+    } else {
+      this.extension._hiTimer.runLoop(this._animationSeq);
     }
+
+    this.extension._hiTimer.runOnce(() => {
+      this._queueVisualSync();
+    }, 16);
+  }
+}
 
     _endAnimation() {
       if (this.extension.debug_visual) {
